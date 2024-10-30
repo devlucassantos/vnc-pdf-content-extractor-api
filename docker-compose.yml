@@ -1,0 +1,18 @@
+services:
+    vnc_pdf_content_extractor_api:
+        container_name: vnc_pdf_content_extractor_api
+        build:
+            context: .
+            dockerfile: Dockerfile
+        restart: always
+        environment:
+            HOST: 0.0.0.0
+            PORT: 8080
+        ports:
+            - "8084:8080"
+        networks:
+            - vnc_network
+
+networks:
+    vnc_network:
+        external: true
