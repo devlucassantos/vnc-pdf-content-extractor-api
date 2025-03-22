@@ -1,6 +1,7 @@
+import asyncio
 import logging
 
-import requests
+import validators
 from fastapi import HTTPException, APIRouter
 from fastapi.responses import JSONResponse
 
@@ -29,12 +30,12 @@ pdfContentExtractionRouter = APIRouter(prefix="/api/v1")
                 }
             }
         },
-        400: {
-            "description": "Badly formatted request",
+        408: {
+            "description": "The timeout for extracting the PDF content has been exceeded",
             "content": {
                 "application/json": {
                     "example": {
-                        "detail": "Failed to download PDF"
+                        "detail": "Request timeout: Extracting PDF content exceeded processing timeout"
                     }
                 }
             }
@@ -46,13 +47,10 @@ pdfContentExtractionRouter = APIRouter(prefix="/api/v1")
                     "example": {
                         "detail": [
                             {
-                                "type": "string_type",
-                                "loc": [
-                                    "body",
-                                    "pdf_url"
-                                ],
-                                "msg": "Input should be a valid string",
-                                "input": 1
+                                "type": "invalid_url",
+                                "loc": ["body", "pdf_url"],
+                                "msg": "Input should be a valid URL",
+                                "input": "test.com"
                             }
                         ]
                     }
@@ -64,32 +62,39 @@ pdfContentExtractionRouter = APIRouter(prefix="/api/v1")
             "content": {
                 "application/json": {
                     "example": {
-                        "detail": "No /Root object! - Is this really a PDF?"
+                        "detail": "Error downloading the PDF: No /Root object! - Is this really a PDF?"
                     }
                 }
             }
         },
     }
 )
-def extract_content(pdf_url_request: PDFUrlRequest):
+async def extract_content(pdf_url_request: PDFUrlRequest):
     pdf_url = pdf_url_request.pdf_url
 
+    logging.info(f"Attempting to download PDF from <{pdf_url}>")
+
+    if not validators.url(pdf_url):
+        logging.error(f"Error downloading the PDF from <{pdf_url}>: PDF URL is invalid")
+        raise HTTPException(status_code=422, detail=[{
+                "type": "invalid_url",
+                "loc": ["body", "pdf_url"],
+                "msg": "Input should be a valid URL",
+                "input": pdf_url
+            }])
+
+    cancel_event = asyncio.Event()
+
     try:
-        logging.info(f"Attempting to download PDF from <{pdf_url}>")
-
-        pdf_content = extract_content_from_pdf_url(pdf_url)
-
-        logging.info(f"Content extraction from PDF <{pdf_url}> successful. Returning extracted text.")
-        return JSONResponse(content={"content": pdf_content})
-
-    except ValueError as e:
-        logging.error(f"Error downloading PDF: The provided pdf_url <{pdf_url}> could not be executed successfully")
-        raise HTTPException(status_code=400, detail="Failed to download PDF")
-
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error downloading PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error downloading PDF: {str(e)}")
-
+        pdf_content = await asyncio.wait_for(asyncio.to_thread(extract_content_from_pdf_url, pdf_url,
+            cancel_event), timeout=45)
+    except asyncio.TimeoutError:
+        cancel_event.set()
+        logging.error(f"Error downloading the PDF from <{pdf_url}>: Extracting PDF content exceeded processing timeout")
+        raise HTTPException(status_code=408, detail="Request timeout: Extracting PDF content exceeded processing timeout")
     except Exception as e:
-        logging.error(f"Internal server error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error downloading the PDF from <{pdf_url}>: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error downloading the PDF: {str(e)}")
+
+    logging.info(f"Content extraction from PDF <{pdf_url}> successful. Returning extracted text.")
+    return JSONResponse(content={"content": pdf_content})
