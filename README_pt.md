@@ -23,6 +23,7 @@ docker compose up --build
 Após a execução do projeto, todas as rotas disponíveis para acesso à API podem ser encontradas através do link:
 
 > [http://localhost:8084/api/documentation](http://localhost:8084/api/documentation)
+<img width="2880" height="1266" alt="image" src="https://github.com/user-attachments/assets/55278567-b073-4192-b187-bee2686f77cc" />
 
 ## Você na Câmara
 
